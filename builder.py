@@ -1,4 +1,5 @@
 from PythonConfluenceAPI import ConfluenceAPI
+import copy
 
 CQL_TEXT = "text~"
 
@@ -8,6 +9,8 @@ class ConfluenceFormatter(ConfluenceAPI):
         self.search_words = []
         self.limit
         self.expands = []
+        self.response = None
+        self.tobeUpdated = []
 
     def search(self, word):
         """
@@ -34,12 +37,12 @@ class ConfluenceFormatter(ConfluenceAPI):
         :return: this instance for builder pattern
         """
         if bool:
-            self.expands.append("body.view")
+            self.expands.append("body.storage,version")
         return self
 
     def __get_search_words(self):
         """
-        Add search words into a single string format it into CQL format
+        Add search words into a single string and format it into CQL format
         :return: A string that is properly formatted
         """
         formatted = ' '.join('{0}'.format(w) for w in self.search_words)
@@ -55,6 +58,23 @@ class ConfluenceFormatter(ConfluenceAPI):
         return self.limit
 
     def execute(self):
-        return self.search_content(self.__get_search_words(), expand=self.__get_expands(),
-                                   limit=self.__get_limit())
+        self.response = self.search_content(self.__get_search_words(),
+                                            expand=self.__get_expands(),
+                                            limit=self.__get_limit())
+        return self.response
+
+    def modify(self):
+        for response in self.response['results']:
+            responseCopy = copy.deepcopy(response)
+            responseCopy['version']['number'] += 1 # increment version number
+
+            self.tobeUpdated.append(responseCopy)
+
+    def getUpdated(self):
+        return self.tobeUpdated
+
+
+    # def
+    #
+    # def link(self, word, https):
 
