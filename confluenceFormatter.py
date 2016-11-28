@@ -10,11 +10,10 @@ class ConfluenceFormatter(ConfluenceAPI):
     LINK2 = '"><ac:plain-text-link-body><![CDATA['
     LINK3 = ']]></ac:plain-text-link-body></ri:page></ac:link>'
 
-
     def __init__(self, username, password, uri_base):
         ConfluenceAPI.__init__(self, username, password, uri_base)
         self.search_words = []
-        self.limit
+        self.limit = 1
         self.expands = []
         self.response = None
         self.tobeUpdated = []
@@ -74,7 +73,7 @@ class ConfluenceFormatter(ConfluenceAPI):
                                             limit=self.__get_limit())
         return self.response
 
-    def link(self, searchStr, pageLoc):
+    def linkModifier(self, searchStr, pageLoc):
         """
         TODO: Confluence does not yet support markdown POST to pages
         Find a word and link it to the page location. Add to
@@ -118,7 +117,6 @@ class ConfluenceFormatter(ConfluenceAPI):
     def getUpdated(self):
         return self.tobeUpdated
 
-
     def update(self):
         """
         Loop through updated items and POST to server
@@ -126,3 +124,9 @@ class ConfluenceFormatter(ConfluenceAPI):
         """
         for page in self.tobeUpdated:
             self.update_content_by_id(page, page['id'])
+
+    def link(self, searchStr, pageLoc):
+        self.search(searchStr).content(True)
+        self.execute()
+        self.linkModifier(searchStr, pageLoc)
+        self.update()
