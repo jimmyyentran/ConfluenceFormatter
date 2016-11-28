@@ -55,8 +55,8 @@ class ConfluenceFormatter(ConfluenceAPI):
         quote_formatted = self.CQL_TEXT + '"{0}"'.format(formatted)
         return quote_formatted
 
+    # TODO Do preliminary work before returning string
     def __get_expands(self):
-        # Do preliminary work before returning string
         formatted = self.expands[0]
         return formatted
 
@@ -73,9 +73,9 @@ class ConfluenceFormatter(ConfluenceAPI):
                                             limit=self.__get_limit())
         return self.response
 
+    #TODO: Confluence does not yet support markdown POST to pages
     def linkModifier(self, searchStr, pageLoc):
         """
-        TODO: Confluence does not yet support markdown POST to pages
         Find a word and link it to the page location. Add to
         list of updated items
         :param searchStr: string to be linked
@@ -125,7 +125,13 @@ class ConfluenceFormatter(ConfluenceAPI):
         for page in self.tobeUpdated:
             self.update_content_by_id(page, page['id'])
 
-    def link(self, searchStr, pageLoc):
+    def link(self, word, pageLoc):
+        """
+        Links word to page
+        :param searchStr: string of the word needed to be linked
+        :param pageLoc: (string) name of the page
+        :return:
+        """
         self.search(searchStr).content(True)
         self.execute()
         self.linkModifier(searchStr, pageLoc)
