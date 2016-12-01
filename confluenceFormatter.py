@@ -1,7 +1,11 @@
 from PythonConfluenceAPI import ConfluenceAPI
 from bs4 import BeautifulSoup
+from diff_match_patch import diff_match_patch
 import re
-import copy
+import sys;
+reload(sys);
+sys.setdefaultencoding("utf8")
+
 import json
 
 
@@ -18,6 +22,7 @@ class ConfluenceFormatter(ConfluenceAPI):
         self.expands = []
         self.response = None
         self.tobeUpdated = []
+        self.responses = []
 
     def search(self, word):
         """
@@ -83,47 +88,7 @@ class ConfluenceFormatter(ConfluenceAPI):
         :return:
         """
         for response in self.response['results']:
-            responseCopy = copy.deepcopy(response)
-            responseCopy['version']['number'] += 1  # increment version number
-            # responseBody = responseCopy['body']['storage']['value']
-            responseBody = responseCopy['body']['view']['value']
-            bs = BeautifulSoup(responseBody)
-            links = bs.findAll('ac:link')
-
-            for link in links:
-                # search pre-existing links
-                linkedWord = re.findall('\[CDATA\[(.*?)\]\]', str(link))[0]
-
-                if linkedWord is None:
-                    break
-
-                if searchStr == linkedWord:
-                    firstChild = link.contents[0]
-                    firstChild['ri:content-title'] = pageLoc
-
-            matches = bs.findAll(text=re.compile(r'\b' + searchStr + r'\b'))
-
-            for match in matches:
-                # search and replace non-links
-                substituted = re.sub(r'\b' + searchStr + r'\b',
-                                     self.LINK1 + pageLoc + self.LINK2 +
-                                     searchStr + self.LINK3, match)
-                match.replaceWith(BeautifulSoup(substituted))
-
-            # do replacement
-            responseCopy['body']['view']['value'] = unicode(bs)
-
-            self.tobeUpdated.append(responseCopy)
-
-    def linkModifier2(self, searchStr, pageLoc):
-        """
-        Find a word and link it to the page location. Add to
-        list of updated items
-        :param searchStr: string to be linked
-        :param pageLoc: string of the name of linked page
-        :return:
-        """
-        for response in self.response['results']:
+            # copy the response
             responseCopy = {}
             responseCopy['id'] = response['id']
             responseCopy['type'] = response['type']
@@ -137,6 +102,7 @@ class ConfluenceFormatter(ConfluenceAPI):
             responseCopy['version']['number'] = response['version']['number'] + 1
             responseBody = responseCopy['body']['storage']['value']
 
+            # parse the html
             bs = BeautifulSoup(responseBody, "html.parser")
             matches = bs.findAll(text=re.compile(r'\b' + searchStr + r'\b'))
 
@@ -156,11 +122,8 @@ class ConfluenceFormatter(ConfluenceAPI):
 
             # do replacement
             responseCopy['body']['storage']['value'] = bs.encode('utf-8')
-            print "MY REQUEST"
-            print "-------------------------------"
-            print json.dumps(responseCopy, indent=4)
-            print "-------------------------------"
             self.tobeUpdated.append(responseCopy)
+            self.responses.append(response)
 
     def getUpdated(self):
         return self.tobeUpdated
@@ -173,14 +136,40 @@ class ConfluenceFormatter(ConfluenceAPI):
         for page in self.tobeUpdated:
             self.update_content_by_id(page, page['id'])
 
-    def link(self, word, pageLoc):
+    def link(self, word, pageLoc, verify=False):
         """
         Links word to page
-        :param searchStr: string of the word needed to be linked
+        :type word: string
+        :param word:
+        :param verify:
         :param pageLoc: (string) name of the page
         :return:
         """
         self.search(word).content(True)
         self.execute()
-        self.linkModifier2(word, pageLoc)
-        # self.update()
+        self.linkModifier(word, pageLoc)
+        if verify:
+            dmp = diff_match_patch()
+            html = """<!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                    <meta charset="UTF-8">
+                    <title>Title</title>
+                    </head>
+                    <body>"""
+            for i in range(len(self.tobeUpdated)):
+                html += "<h1>" + "Title: {}".format(self.tobeUpdated[i]['title']) + "</h1>"
+                diffs = dmp.diff_main(self.responses[i]['body']['storage']['value'].decode(
+                    'utf-8'), self.tobeUpdated[i]['body']['storage']['value'].decode(
+                    'utf-8'))
+                dmp.diff_cleanupSemantic(diffs)
+                htmlSnippet = dmp.diff_prettyHtml(diffs)
+                html += htmlSnippet
+
+            html += "</body></html>"
+            import datetime
+            with open("link_" + word + "_to_" + pageLoc + str(datetime.datetime.now()) +
+                              ".html", 'w') as file:
+                file.write(html)
+        else:
+            self.update()
