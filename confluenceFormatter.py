@@ -1,19 +1,20 @@
 from PythonConfluenceAPI import ConfluenceAPI
-from BeautifulSoup import BeautifulSoup
+from bs4 import BeautifulSoup
 import re
 import copy
+import json
+
 
 class ConfluenceFormatter(ConfluenceAPI):
-
     CQL_TEXT = "text~"
     LINK1 = '<ac:link><ri:page ri:content-title="'
-    LINK2 = '"><ac:plain-text-link-body><![CDATA['
-    LINK3 = ']]></ac:plain-text-link-body></ri:page></ac:link>'
+    LINK2 = '"/><ac:plain-text-link-body><![CDATA['
+    LINK3 = ']]></ac:plain-text-link-body></ac:link>'
 
     def __init__(self, username, password, uri_base):
         ConfluenceAPI.__init__(self, username, password, uri_base)
         self.search_words = []
-        self.limit = 1
+        self.lim = 1
         self.expands = []
         self.response = None
         self.tobeUpdated = []
@@ -33,7 +34,7 @@ class ConfluenceFormatter(ConfluenceAPI):
         :param lim: An integer of returned responses
         :return: this instance for builder pattern
         """
-        self.limit = lim
+        self.lim = lim
         return self
 
     def content(self, bool=True):
@@ -61,7 +62,7 @@ class ConfluenceFormatter(ConfluenceAPI):
         return formatted
 
     def __get_limit(self):
-        return self.limit
+        return self.lim
 
     def execute(self):
         """
@@ -73,7 +74,6 @@ class ConfluenceFormatter(ConfluenceAPI):
                                             limit=self.__get_limit())
         return self.response
 
-    #TODO: Confluence does not yet support markdown POST to pages
     def linkModifier(self, searchStr, pageLoc):
         """
         Find a word and link it to the page location. Add to
@@ -84,8 +84,9 @@ class ConfluenceFormatter(ConfluenceAPI):
         """
         for response in self.response['results']:
             responseCopy = copy.deepcopy(response)
-            responseCopy['version']['number'] += 1 # increment version number
-            responseBody = responseCopy['body']['storage']['value']
+            responseCopy['version']['number'] += 1  # increment version number
+            # responseBody = responseCopy['body']['storage']['value']
+            responseBody = responseCopy['body']['view']['value']
             bs = BeautifulSoup(responseBody)
             links = bs.findAll('ac:link')
 
@@ -105,13 +106,60 @@ class ConfluenceFormatter(ConfluenceAPI):
             for match in matches:
                 # search and replace non-links
                 substituted = re.sub(r'\b' + searchStr + r'\b',
-                                  self.LINK1 + pageLoc + self.LINK2 +
-                                  searchStr + self.LINK3, match)
+                                     self.LINK1 + pageLoc + self.LINK2 +
+                                     searchStr + self.LINK3, match)
                 match.replaceWith(BeautifulSoup(substituted))
 
             # do replacement
-            responseCopy['body']['storage']['value'] = unicode(bs)
+            responseCopy['body']['view']['value'] = unicode(bs)
 
+            self.tobeUpdated.append(responseCopy)
+
+    def linkModifier2(self, searchStr, pageLoc):
+        """
+        Find a word and link it to the page location. Add to
+        list of updated items
+        :param searchStr: string to be linked
+        :param pageLoc: string of the name of linked page
+        :return:
+        """
+        for response in self.response['results']:
+            responseCopy = {}
+            responseCopy['id'] = response['id']
+            responseCopy['type'] = response['type']
+            responseCopy['title'] = response['title']
+            responseCopy['body'] = {}
+            responseCopy['body']['storage'] = {}
+            responseCopy['body']['storage']['representation'] = response['body']['storage'][
+                'representation']
+            responseCopy['body']['storage']['value'] = response['body']['storage']['value']
+            responseCopy['version'] = {}
+            responseCopy['version']['number'] = response['version']['number'] + 1
+            responseBody = responseCopy['body']['storage']['value']
+
+            bs = BeautifulSoup(responseBody, "html.parser")
+            matches = bs.findAll(text=re.compile(r'\b' + searchStr + r'\b'))
+
+            # search and replace non-links
+            for match in matches:
+
+                # check if part of a link
+                if match.parent.name == "ac:plain-text-link-body":
+                    # is link
+                    match.parent.previous_sibling['ri:content-title'] = pageLoc
+                else:
+                    # is not a link
+                    substituted = re.sub(r'\b' + searchStr + r'\b',
+                                         self.LINK1 + pageLoc + self.LINK2 +
+                                         searchStr + self.LINK3, match)
+                    match.replaceWith(BeautifulSoup(substituted, "html.parser"))
+
+            # do replacement
+            responseCopy['body']['storage']['value'] = bs.encode('utf-8')
+            print "MY REQUEST"
+            print "-------------------------------"
+            print json.dumps(responseCopy, indent=4)
+            print "-------------------------------"
             self.tobeUpdated.append(responseCopy)
 
     def getUpdated(self):
@@ -132,7 +180,7 @@ class ConfluenceFormatter(ConfluenceAPI):
         :param pageLoc: (string) name of the page
         :return:
         """
-        self.search(searchStr).content(True)
+        self.search(word).content(True)
         self.execute()
-        self.linkModifier(searchStr, pageLoc)
-        self.update()
+        self.linkModifier2(word, pageLoc)
+        # self.update()
