@@ -110,7 +110,7 @@ class ConfluenceFormatter(ConfluenceAPI):
             for match in matches:
 
                 # check if part of a link
-                if match.parent.name == "ac:plain-text-link-body":
+                if match.parent.parent.name == "ac:link":
                     # is link
                     match.parent.previous_sibling['ri:content-title'] = pageLoc
                 else:
