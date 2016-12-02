@@ -1,12 +1,12 @@
+import re
+import sys;
+
 from PythonConfluenceAPI import ConfluenceAPI
 from bs4 import BeautifulSoup
 from diff_match_patch import diff_match_patch
-import re
-import sys;
+
 reload(sys);
 sys.setdefaultencoding("utf8")
-
-import json
 
 
 class ConfluenceFormatter(ConfluenceAPI):
@@ -18,7 +18,7 @@ class ConfluenceFormatter(ConfluenceAPI):
     def __init__(self, username, password, uri_base):
         ConfluenceAPI.__init__(self, username, password, uri_base)
         self.search_words = []
-        self.lim = 1
+        self.lim = 100
         self.expands = []
         self.response = None
         self.tobeUpdated = []
@@ -52,7 +52,7 @@ class ConfluenceFormatter(ConfluenceAPI):
             self.expands.append("body.storage,version")
         return self
 
-    def __get_search_words(self):
+    def _get_search_words(self):
         """
         Add search words into a single string and format it into CQL format
         :return: A string that is properly formatted
@@ -62,11 +62,11 @@ class ConfluenceFormatter(ConfluenceAPI):
         return quote_formatted
 
     # TODO Do preliminary work before returning string
-    def __get_expands(self):
+    def _get_expands(self):
         formatted = self.expands[0]
         return formatted
 
-    def __get_limit(self):
+    def _get_limit(self):
         return self.lim
 
     def execute(self):
@@ -74,58 +74,52 @@ class ConfluenceFormatter(ConfluenceAPI):
         Run the query and save it as an instance field
         :return: json object
         """
-        self.response = self.search_content(self.__get_search_words(),
-                                            expand=self.__get_expands(),
-                                            limit=self.__get_limit())
+        self.response = self.search_content(self._get_search_words(),
+                                            expand=self._get_expands(),
+                                            limit=self._get_limit())
         return self.response
 
-    def linkModifier(self, searchStr, pageLoc):
+    def link_modifier(self, search_string, page_location):
         """
         Find a word and link it to the page location. Add to
         list of updated items
-        :param searchStr: string to be linked
-        :param pageLoc: string of the name of linked page
+        :param search_string: string to be linked
+        :param page_location: string of the name of linked page
         :return:
         """
         for response in self.response['results']:
             # copy the response
-            responseCopy = {}
-            responseCopy['id'] = response['id']
-            responseCopy['type'] = response['type']
-            responseCopy['title'] = response['title']
-            responseCopy['body'] = {}
-            responseCopy['body']['storage'] = {}
-            responseCopy['body']['storage']['representation'] = response['body']['storage'][
+            response_copy = {'id': response['id'], 'type': response['type'],
+                             'title': response['title'], 'version': {}, 'body': {}}
+            response_copy['body']['storage'] = {}
+            response_copy['body']['storage']['representation'] = response['body']['storage'][
                 'representation']
-            responseCopy['body']['storage']['value'] = response['body']['storage']['value']
-            responseCopy['version'] = {}
-            responseCopy['version']['number'] = response['version']['number'] + 1
-            responseBody = responseCopy['body']['storage']['value']
+            response_copy['body']['storage']['value'] = response['body']['storage']['value']
+            response_copy['version']['number'] = response['version']['number'] + 1
+            response_body = response_copy['body']['storage']['value']
 
             # parse the html
-            bs = BeautifulSoup(responseBody, "html.parser")
-            matches = bs.findAll(text=re.compile(r'\b' + searchStr + r'\b'))
+            bs = BeautifulSoup(response_body, "html.parser")
+            matches = bs.findAll(text=re.compile(r'\b' + search_string + r'\b'))
 
             # search and replace non-links
             for match in matches:
 
                 # check if part of a link
                 if match.parent.parent.name == "ac:link":
-                    # is link
-                    match.parent.previous_sibling['ri:content-title'] = pageLoc
+                    match.parent.previous_sibling['ri:content-title'] = page_location
                 else:
-                    # is not a link
-                    substituted = re.sub(r'\b' + searchStr + r'\b',
-                                         self.LINK1 + pageLoc + self.LINK2 +
-                                         searchStr + self.LINK3, match)
+                    substituted = re.sub(r'\b' + search_string + r'\b',
+                                         self.LINK1 + page_location + self.LINK2 +
+                                         search_string + self.LINK3, match)
                     match.replaceWith(BeautifulSoup(substituted, "html.parser"))
 
             # do replacement
-            responseCopy['body']['storage']['value'] = bs.encode('utf-8')
-            self.tobeUpdated.append(responseCopy)
+            response_copy['body']['storage']['value'] = bs.encode('utf-8')
+            self.tobeUpdated.append(response_copy)
             self.responses.append(response)
 
-    def getUpdated(self):
+    def get_updated(self):
         return self.tobeUpdated
 
     def update(self):
@@ -147,7 +141,7 @@ class ConfluenceFormatter(ConfluenceAPI):
         """
         self.search(word).content(True)
         self.execute()
-        self.linkModifier(word, pageLoc)
+        self.link_modifier(word, pageLoc)
         if verify:
             dmp = diff_match_patch()
             html = """<!DOCTYPE html>
@@ -163,8 +157,8 @@ class ConfluenceFormatter(ConfluenceAPI):
                     'utf-8'), self.tobeUpdated[i]['body']['storage']['value'].decode(
                     'utf-8'))
                 dmp.diff_cleanupSemantic(diffs)
-                htmlSnippet = dmp.diff_prettyHtml(diffs)
-                html += htmlSnippet
+                html_snippet = dmp.diff_prettyHtml(diffs)
+                html += html_snippet
 
             html += "</body></html>"
             import datetime
