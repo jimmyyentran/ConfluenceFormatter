@@ -15,13 +15,19 @@ class ConfluenceFormatter(ConfluenceAPI):
     LINK2 = '"/><ac:plain-text-link-body><![CDATA['
     LINK3 = ']]></ac:plain-text-link-body></ac:link>'
 
+    # Url formats
+    VIEW_URL = "viewpage.action?"
+    PAGE_URL = "pages/"
+    PAGE_ID = "pageId="
+
     def __init__(self, username, password, uri_base):
         ConfluenceAPI.__init__(self, username, password, uri_base)
+        self.uri_base = uri_base if uri_base.endswith('/') else uri_base + "/"
         self.search_words = []
         self.lim = 100
         self.expands = []
         self.response = None
-        self.tobeUpdated = []
+        self.to_be_updated = []
         self.responses = []
 
     def search(self, word):
@@ -98,13 +104,13 @@ class ConfluenceFormatter(ConfluenceAPI):
             response_copy['version']['number'] = response['version']['number'] + 1
             response_body = response_copy['body']['storage']['value']
 
-            # parse the html
             bs = BeautifulSoup(response_body, "html.parser")
             matches = bs.findAll(text=re.compile(r'\b' + search_string + r'\b'))
 
-            # search and replace non-links
-            for match in matches:
+            if not matches:
+                return
 
+            for match in matches:
                 # check if part of a link
                 if match.parent.parent.name == "ac:link":
                     match.parent.previous_sibling['ri:content-title'] = page_location
@@ -116,21 +122,27 @@ class ConfluenceFormatter(ConfluenceAPI):
 
             # do replacement
             response_copy['body']['storage']['value'] = bs.encode('utf-8')
-            self.tobeUpdated.append(response_copy)
+            self.to_be_updated.append(response_copy)
             self.responses.append(response)
 
     def get_updated(self):
-        return self.tobeUpdated
+        return self.to_be_updated
 
-    def update(self):
+    def update(self, step):
         """
         Loop through updated items and POST to server
         :return:
         """
-        for page in self.tobeUpdated:
+        for page in self.to_be_updated:
+            if step:
+                html = self.uri_base + self.PAGE_URL + self.VIEW_URL + self.PAGE_ID + page['id']
+                choice = raw_input("Updating: {}\n{}\nUpdate changes? 'y' for yes".
+                                   format(page['title'], html)).lower()
+                if choice != 'y':
+                    continue
             self.update_content_by_id(page, page['id'])
 
-    def link(self, word, pageLoc, verify=False):
+    def link(self, word, pageLoc, verify=False, step=True):
         """
         Links word to page
         :type word: string
@@ -151,10 +163,10 @@ class ConfluenceFormatter(ConfluenceAPI):
                     <title>Title</title>
                     </head>
                     <body>"""
-            for i in range(len(self.tobeUpdated)):
-                html += "<h1>" + "Title: {}".format(self.tobeUpdated[i]['title']) + "</h1>"
+            for i in range(len(self.to_be_updated)):
+                html += "<h1>" + "Title: {}".format(self.to_be_updated[i]['title']) + "</h1>"
                 diffs = dmp.diff_main(self.responses[i]['body']['storage']['value'].decode(
-                    'utf-8'), self.tobeUpdated[i]['body']['storage']['value'].decode(
+                    'utf-8'), self.to_be_updated[i]['body']['storage']['value'].decode(
                     'utf-8'))
                 dmp.diff_cleanupSemantic(diffs)
                 html_snippet = dmp.diff_prettyHtml(diffs)
@@ -166,4 +178,4 @@ class ConfluenceFormatter(ConfluenceAPI):
                               ".html", 'w') as file:
                 file.write(html)
         else:
-            self.update()
+            self.update(step)
