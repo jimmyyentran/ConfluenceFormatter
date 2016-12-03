@@ -94,6 +94,9 @@ class ConfluenceFormatter(ConfluenceAPI):
         :return:
         """
         for response in self.response['results']:
+            if response['type'] != 'page':
+                continue
+
             # copy the response
             response_copy = {'id': response['id'], 'type': response['type'],
                              'title': response['title'], 'version': {}, 'body': {}}
@@ -117,7 +120,12 @@ class ConfluenceFormatter(ConfluenceAPI):
                 # check if word is part of a markdown
                 if "ac:" in grand_parent:
                     if grand_parent == "ac:link":
-                        existing_link = match.parent.previous_sibling['ri:content-title']
+                        try:
+                            existing_link = match.parent.previous_sibling['ri:content-title']
+                        except:
+                            print "Error: detected self referencing link at: {}"\
+                                .format(response['title'])
+                            continue
                         if existing_link != page_location:
                             match.parent.previous_sibling['ri:content-title'] = page_location
                             change_count += 1
@@ -127,9 +135,9 @@ class ConfluenceFormatter(ConfluenceAPI):
                         continue
                 else:
                     # don't add links in tables
-                    for parent in match.parents:
-                        if "table" in parent:
-                            continue
+                    # for parent in match.parents:
+                    #     if "table" in parent:
+                    #         continue
                     substituted = re.sub(r'\b' + search_string + r'\b',
                                          self.LINK1 + page_location + self.LINK2 +
                                          search_string + self.LINK3, match)
@@ -160,7 +168,9 @@ class ConfluenceFormatter(ConfluenceAPI):
                 if choice != 'y':
                     print "Skipping"
                     continue
-            # self.update_content_by_id(page, page['id'])
+
+            self.update_content_by_id(page, page['id'])
+            print "Updated: {}".format(page['title'])
 
     def link(self, word, pageLoc, verify=False, step=True):
         """
