@@ -110,20 +110,39 @@ class ConfluenceFormatter(ConfluenceAPI):
             if not matches:
                 return
 
+            change_count = 0
             for match in matches:
-                # check if part of a link
-                if match.parent.parent.name == "ac:link":
-                    match.parent.previous_sibling['ri:content-title'] = page_location
+                grand_parent = match.parent.parent.name
+
+                # check if word is part of a markdown
+                if "ac:" in grand_parent:
+                    if grand_parent == "ac:link":
+                        existing_link = match.parent.previous_sibling['ri:content-title']
+                        if existing_link != page_location:
+                            match.parent.previous_sibling['ri:content-title'] = page_location
+                            change_count += 1
+                        else:
+                            continue
+                    else:
+                        continue
                 else:
+                    # don't add links in tables
+                    for parent in match.parents:
+                        if "table" in parent:
+                            continue
                     substituted = re.sub(r'\b' + search_string + r'\b',
                                          self.LINK1 + page_location + self.LINK2 +
                                          search_string + self.LINK3, match)
                     match.replaceWith(BeautifulSoup(substituted, "html.parser"))
+                    change_count += 1
 
-            # do replacement
-            response_copy['body']['storage']['value'] = bs.encode('utf-8')
-            self.to_be_updated.append(response_copy)
-            self.responses.append(response)
+            if change_count:
+                # do replacement
+                response_copy['body']['storage']['value'] = bs.encode('utf-8')
+                self.to_be_updated.append(response_copy)
+                self.responses.append(response)
+            else:
+                continue
 
     def get_updated(self):
         return self.to_be_updated
@@ -136,11 +155,12 @@ class ConfluenceFormatter(ConfluenceAPI):
         for page in self.to_be_updated:
             if step:
                 html = self.uri_base + self.PAGE_URL + self.VIEW_URL + self.PAGE_ID + page['id']
-                choice = raw_input("Updating: {}\n{}\nUpdate changes? 'y' for yes".
+                choice = raw_input("Updating: {} - {}\nUpdate changes? 'y' for yes\n".
                                    format(page['title'], html)).lower()
                 if choice != 'y':
+                    print "Skipping"
                     continue
-            self.update_content_by_id(page, page['id'])
+            # self.update_content_by_id(page, page['id'])
 
     def link(self, word, pageLoc, verify=False, step=True):
         """
